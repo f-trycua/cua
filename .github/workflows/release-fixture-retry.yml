@@ -1,0 +1,39 @@
+name: "Fixture: Retry Release Please"
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: release-fixture-retry
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    if: github.repository == 'f-trycua/cua'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the fixture unless it already passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RESULT=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow release-please.yml \
+            --limit 1 \
+            --json status,conclusion \
+            --jq '.[0] | [.status, .conclusion] | @tsv')
+          if [[ "$RESULT" == $'completed\tsuccess' ]]; then
+            echo "Release Please fixture already passed; no retry needed."
+            exit 0
+          fi
+          gh workflow run release-please.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo "Dispatched Release Please fixture; the next schedule will retry if needed."
