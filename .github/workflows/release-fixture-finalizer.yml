@@ -1,0 +1,60 @@
+name: "Fixture: Finalize fork release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Release Please tag in the fixture fork
+        required: true
+        type: string
+      product:
+        description: Release behavior to verify
+        required: true
+        type: choice
+        options:
+          - driver
+          - lume
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build deterministic fixture asset and body
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          git rev-parse --verify "refs/tags/$TAG^{commit}" >/dev/null
+          mkdir -p fixture-assets fixture-metadata
+          printf 'release fixture asset for %s\n' "$TAG" > fixture-assets/fixture.txt
+          printf '# Release fixture %s\n\nFork-only validation asset.\n' "$TAG" \
+            > fixture-metadata/body.md
+
+      - name: Finalize and verify the Release Please draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT: ${{ inputs.product }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse "refs/tags/$TAG^{commit}")
+          EXTRA=()
+          if [[ "$PRODUCT" == driver ]]; then
+            EXTRA+=(--prerelease)
+          else
+            EXTRA+=(--make-latest)
+          fi
+          python3 .github/scripts/github_release.py \
+            --repository "${{ github.repository }}" \
+            --tag "$TAG" \
+            --sha "$SHA" \
+            --body fixture-metadata/body.md \
+            --asset-dir fixture-assets \
+            "${EXTRA[@]}"
